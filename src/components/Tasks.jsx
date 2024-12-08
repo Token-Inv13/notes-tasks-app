@@ -1,84 +1,102 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
-const Tasks = ({ isDarkMode, listId }) => {
-  const [newTask, setNewTask] = useState('');
+export default function Tasks({ listId }) {
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTaskContent, setNewTaskContent] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
   useEffect(() => {
-    if (user && listId) {
+    if (user) {
       fetchTasks();
     }
   }, [user, listId]);
 
   const fetchTasks = async () => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
+      setIsLoading(true);
+      console.log('Fetching tasks for list:', listId);
+
+      const query = supabase
         .from('tasks')
         .select('*')
         .eq('user_id', user.id)
-        .eq('list_id', listId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (listId) {
+        query.eq('list_id', listId);
+      }
+
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('Error fetching tasks:', error);
+        return;
+      }
+      
+      console.log('Fetched tasks:', data);
       setTasks(data || []);
     } catch (error) {
-      console.error('Error fetching tasks:', error);
+      console.error('Error in fetchTasks:', error);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const addTask = async () => {
-    if (!newTask.trim() || !listId) return;
-
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    
     try {
+      if (!newTaskContent.trim()) return;
+
+      const taskData = {
+        content: newTaskContent,
+        user_id: user.id,
+        list_id: listId,
+        completed: false,
+      };
+
+      console.log('Adding task with data:', taskData);
+
       const { data, error } = await supabase
         .from('tasks')
-        .insert([
-          {
-            content: newTask.trim(),
-            completed: false,
-            user_id: user.id,
-            list_id: listId
-          }
-        ])
+        .insert([taskData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error adding task:', error);
+        return;
+      }
 
-      setTasks([data, ...tasks]);
-      setNewTask('');
+      console.log('Task added successfully:', data);
+      setNewTaskContent('');
+      setIsModalOpen(false);
+      fetchTasks();
     } catch (error) {
-      console.error('Error adding task:', error);
+      console.error('Error in handleAddTask:', error);
     }
   };
 
-  const toggleTask = async (taskId) => {
+  const toggleTaskCompletion = async (taskId, currentStatus) => {
     try {
-      const taskToUpdate = tasks.find(t => t.id === taskId);
-      if (!taskToUpdate) return;
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('tasks')
-        .update({ completed: !taskToUpdate.completed })
+        .update({ completed: !currentStatus })
         .eq('id', taskId)
-        .select()
-        .single();
+        .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error updating task:', error);
+        return;
+      }
 
-      setTasks(tasks.map(task => 
-        task.id === taskId ? data : task
-      ));
+      fetchTasks();
     } catch (error) {
-      console.error('Error toggling task:', error);
+      console.error('Error in toggleTaskCompletion:', error);
     }
   };
 
@@ -87,171 +105,101 @@ const Tasks = ({ isDarkMode, listId }) => {
       const { error } = await supabase
         .from('tasks')
         .delete()
-        .eq('id', taskId);
+        .eq('id', taskId)
+        .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error deleting task:', error);
+        return;
+      }
 
-      setTasks(tasks.filter(task => task.id !== taskId));
+      fetchTasks();
     } catch (error) {
-      console.error('Error deleting task:', error);
+      console.error('Error in deleteTask:', error);
     }
   };
 
-  const filteredTasks = tasks.filter(task => {
-    switch (filter) {
-      case 'active':
-        return !task.completed;
-      case 'completed':
-        return task.completed;
-      default:
-        return true;
-    }
-  });
-
-  if (!listId) {
-    return (
-      <div className={`p-4 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-        <div className={`text-center py-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          Select a list to add tasks
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`p-4 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-      <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-        Tasks
-      </h2>
-      
-      <div className="space-y-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Add a new task..."
-            className={`flex-1 p-2 rounded-md border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-              isDarkMode 
-                ? 'bg-gray-700 text-white border-gray-600 placeholder-gray-400' 
-                : 'bg-white text-gray-900 border-gray-300 placeholder-gray-500'
-            }`}
-            onKeyPress={(e) => e.key === 'Enter' && addTask()}
-          />
-          <button
-            onClick={addTask}
-            className={`px-4 py-2 rounded-md ${
-              isDarkMode
-                ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                : 'bg-indigo-500 text-white hover:bg-indigo-600'
-            }`}
-          >
-            Add
-          </button>
+    <div className="relative min-h-[500px]">
+      {isLoading ? (
+        <div className="text-center py-4 text-gray-500">Loading tasks...</div>
+      ) : tasks.length === 0 ? (
+        <div className="text-center py-4 text-gray-500">
+          {listId ? "No tasks in this list yet" : "Select a list to add tasks"}
         </div>
-
-        <div className="flex space-x-2">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded-md ${
-              filter === 'all'
-                ? 'bg-indigo-600 text-white'
-                : isDarkMode
-                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilter('active')}
-            className={`px-3 py-1 rounded-md ${
-              filter === 'active'
-                ? 'bg-indigo-600 text-white'
-                : isDarkMode
-                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Active
-          </button>
-          <button
-            onClick={() => setFilter('completed')}
-            className={`px-3 py-1 rounded-md ${
-              filter === 'completed'
-                ? 'bg-indigo-600 text-white'
-                : isDarkMode
-                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Completed
-          </button>
-        </div>
-
-        {loading ? (
-          <div className={`text-center py-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            Loading tasks...
-          </div>
-        ) : filteredTasks.length === 0 ? (
-          <div className={`text-center py-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            No tasks found
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filteredTasks.map((task) => (
-              <div
-                key={task.id}
-                className={`flex items-center justify-between p-3 rounded-md ${
-                  isDarkMode
-                    ? 'bg-gray-700 text-white hover:bg-gray-600'
-                    : 'bg-gray-50 text-gray-900 hover:bg-gray-100'
-                }`}
+      ) : (
+        <div className="space-y-4">
+          {tasks.map((task) => (
+            <div
+              key={task.id}
+              className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center space-x-4 group"
+            >
+              <input
+                type="checkbox"
+                checked={task.completed}
+                onChange={() => toggleTaskCompletion(task.id, task.completed)}
+                className="h-5 w-5 text-green-600 rounded focus:ring-green-500"
+              />
+              <p className={`text-gray-800 flex-1 ${task.completed ? 'line-through text-gray-500' : ''}`}>
+                {task.content}
+              </p>
+              <button
+                onClick={() => deleteTask(task.id)}
+                className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete task"
               >
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    checked={task.completed}
-                    onChange={() => toggleTask(task.id)}
-                    className={`h-4 w-4 rounded border-2 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                      isDarkMode 
-                        ? 'bg-gray-700 border-gray-500 text-indigo-600' 
-                        : 'bg-white border-gray-300 text-indigo-600'
-                    }`}
-                  />
-                  <span className={task.completed ? 'line-through text-gray-500' : ''}>
-                    {task.content}
-                  </span>
-                </div>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {listId && (
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="fixed bottom-8 right-8 w-14 h-14 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 flex items-center justify-center text-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+        >
+          <span>+</span>
+        </button>
+      )}
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h2 className="text-xl font-semibold mb-4">Add New Task</h2>
+            <form onSubmit={handleAddTask}>
+              <input
+                type="text"
+                value={newTaskContent}
+                onChange={(e) => setNewTaskContent(e.target.value)}
+                className="w-full p-2 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
+                placeholder="Enter your task..."
+                autoFocus
+                required
+              />
+              <div className="flex justify-end space-x-2">
                 <button
-                  onClick={() => deleteTask(task.id)}
-                  className={`p-1 rounded-full hover:bg-opacity-20 ${
-                    isDarkMode
-                      ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-600'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
-                  }`}
+                  type="button"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setNewTaskContent('');
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
                 >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  Add Task
                 </button>
               </div>
-            ))}
+            </form>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default Tasks;
+}
