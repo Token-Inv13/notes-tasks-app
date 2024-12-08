@@ -1,43 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 export default function Tasks({ listId }) {
   const [tasks, setTasks] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTaskContent, setNewTaskContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newTaskContent, setNewTaskContent] = useState('');
   const { user } = useAuth();
 
   useEffect(() => {
-    if (user) {
+    if (listId) {
       fetchTasks();
+    } else {
+      setTasks([]);
+      setIsLoading(false);
     }
-  }, [user, listId]);
+  }, [listId]);
 
   const fetchTasks = async () => {
     try {
       setIsLoading(true);
-      console.log('Fetching tasks for list:', listId);
-
-      const query = supabase
+      const { data, error } = await supabase
         .from('tasks')
         .select('*')
+        .eq('list_id', listId)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('position', { ascending: true });
 
-      if (listId) {
-        query.eq('list_id', listId);
-      }
-
-      const { data, error } = await query;
-      
       if (error) {
         console.error('Error fetching tasks:', error);
         return;
       }
-      
-      console.log('Fetched tasks:', data);
+
       setTasks(data || []);
     } catch (error) {
       console.error('Error in fetchTasks:', error);
@@ -46,24 +42,52 @@ export default function Tasks({ listId }) {
     }
   };
 
-  const handleAddTask = async (e) => {
-    e.preventDefault();
-    
+  const onDragEnd = async (result) => {
+    if (!result.destination) return;
+
+    const items = Array.from(tasks);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    setTasks(items);
+
+    // Update positions in database
+    const updates = items.map((item, index) => ({
+      id: item.id,
+      position: index,
+    }));
+
     try {
-      if (!newTaskContent.trim()) return;
+      const { error } = await supabase
+        .from('tasks')
+        .upsert(updates, { onConflict: 'id' });
 
-      const taskData = {
-        content: newTaskContent,
-        user_id: user.id,
-        list_id: listId,
-        completed: false,
-      };
+      if (error) {
+        console.error('Error updating task positions:', error);
+        fetchTasks(); // Revert to previous state if error
+      }
+    } catch (error) {
+      console.error('Error in onDragEnd:', error);
+      fetchTasks(); // Revert to previous state if error
+    }
+  };
 
-      console.log('Adding task with data:', taskData);
+  const addTask = async (e) => {
+    e.preventDefault();
+    if (!newTaskContent.trim()) return;
 
+    try {
       const { data, error } = await supabase
         .from('tasks')
-        .insert([taskData])
+        .insert([
+          {
+            content: newTaskContent.trim(),
+            user_id: user.id,
+            list_id: listId,
+            position: tasks.length,
+            completed: false,
+          },
+        ])
         .select()
         .single();
 
@@ -72,20 +96,19 @@ export default function Tasks({ listId }) {
         return;
       }
 
-      console.log('Task added successfully:', data);
+      setTasks([...tasks, data]);
       setNewTaskContent('');
-      setIsModalOpen(false);
-      fetchTasks();
+      setShowAddModal(false);
     } catch (error) {
-      console.error('Error in handleAddTask:', error);
+      console.error('Error in addTask:', error);
     }
   };
 
-  const toggleTaskCompletion = async (taskId, currentStatus) => {
+  const toggleTask = async (taskId, completed) => {
     try {
       const { error } = await supabase
         .from('tasks')
-        .update({ completed: !currentStatus })
+        .update({ completed })
         .eq('id', taskId)
         .eq('user_id', user.id);
 
@@ -94,9 +117,13 @@ export default function Tasks({ listId }) {
         return;
       }
 
-      fetchTasks();
+      setTasks(
+        tasks.map((task) =>
+          task.id === taskId ? { ...task, completed } : task
+        )
+      );
     } catch (error) {
-      console.error('Error in toggleTaskCompletion:', error);
+      console.error('Error in toggleTask:', error);
     }
   };
 
@@ -113,92 +140,118 @@ export default function Tasks({ listId }) {
         return;
       }
 
-      fetchTasks();
+      setTasks(tasks.filter((task) => task.id !== taskId));
     } catch (error) {
       console.error('Error in deleteTask:', error);
     }
   };
 
+  if (!listId) {
+    return (
+      <div className="text-center text-gray-500 py-4">
+        Select a list to add tasks
+      </div>
+    );
+  }
+
   return (
-    <div className="relative min-h-[500px]">
+    <div className="p-4">
       {isLoading ? (
-        <div className="text-center py-4 text-gray-500">Loading tasks...</div>
-      ) : tasks.length === 0 ? (
-        <div className="text-center py-4 text-gray-500">
-          {listId ? "No tasks in this list yet" : "Select a list to add tasks"}
-        </div>
+        <div className="text-center text-gray-500">Loading tasks...</div>
       ) : (
-        <div className="space-y-4">
-          {tasks.map((task) => (
-            <div
-              key={task.id}
-              className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center space-x-4 group"
-            >
-              <input
-                type="checkbox"
-                checked={task.completed}
-                onChange={() => toggleTaskCompletion(task.id, task.completed)}
-                className="h-5 w-5 text-green-600 rounded focus:ring-green-500"
-              />
-              <p className={`text-gray-800 flex-1 ${task.completed ? 'line-through text-gray-500' : ''}`}>
-                {task.content}
-              </p>
-              <button
-                onClick={() => deleteTask(task.id)}
-                className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Delete task"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {listId && (
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="fixed bottom-8 right-8 w-14 h-14 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 flex items-center justify-center text-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-        >
-          <span>+</span>
-        </button>
-      )}
-
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h2 className="text-xl font-semibold mb-4">Add New Task</h2>
-            <form onSubmit={handleAddTask}>
-              <input
-                type="text"
-                value={newTaskContent}
-                onChange={(e) => setNewTaskContent(e.target.value)}
-                className="w-full p-2 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="Enter your task..."
-                autoFocus
-                required
-              />
-              <div className="flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setNewTaskContent('');
-                  }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+        <>
+          <DragDropContext onDragEnd={onDragEnd}>
+            <Droppable droppableId="tasks">
+              {(provided) => (
+                <div
+                  {...provided.droppableProps}
+                  ref={provided.innerRef}
+                  className="space-y-2"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                >
-                  Add Task
-                </button>
+                  {tasks.map((task, index) => (
+                    <Draggable key={task.id} draggableId={task.id} index={index}>
+                      {(provided) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="checkbox"
+                              checked={task.completed}
+                              onChange={(e) => toggleTask(task.id, e.target.checked)}
+                              className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                            />
+                            <span
+                              className={`text-sm ${
+                                task.completed ? 'line-through text-gray-400' : ''
+                              }`}
+                            >
+                              {task.content}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => deleteTask(task.id)}
+                            className="text-gray-400 hover:text-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+
+          {showAddModal ? (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="bg-white p-4 rounded-lg shadow-lg w-96">
+                <h3 className="text-lg font-medium mb-4">Add New Task</h3>
+                <form onSubmit={addTask}>
+                  <input
+                    type="text"
+                    value={newTaskContent}
+                    onChange={(e) => setNewTaskContent(e.target.value)}
+                    placeholder="Task content..."
+                    className="w-full p-2 border rounded-md mb-4"
+                    autoFocus
+                    required
+                  />
+                  <div className="flex justify-end space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddModal(false);
+                        setNewTaskContent('');
+                      }}
+                      className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                    >
+                      Add Task
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="fixed bottom-8 right-8 w-14 h-14 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 flex items-center justify-center text-2xl"
+            >
+              +
+            </button>
+          )}
+        </>
       )}
     </div>
   );

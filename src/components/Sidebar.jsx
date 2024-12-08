@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../config/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 
 export default function Sidebar({ activeList, onListSelect }) {
   const [lists, setLists] = useState([])
@@ -21,7 +22,7 @@ export default function Sidebar({ activeList, onListSelect }) {
         .from('lists')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
+        .order('position', { ascending: true })
 
       if (error) {
         console.error('Error fetching lists:', error)
@@ -30,7 +31,6 @@ export default function Sidebar({ activeList, onListSelect }) {
 
       setLists(data || [])
       
-      // Si aucune liste n'est sélectionnée et qu'il y a des listes, sélectionner la première
       if (!activeList && data && data.length > 0) {
         onListSelect(data[0])
       }
@@ -41,36 +41,80 @@ export default function Sidebar({ activeList, onListSelect }) {
     }
   }
 
-  const addList = async (e) => {
-    e.preventDefault()
-    if (!newListName.trim()) return
+  const onDragEnd = async (result) => {
+    if (!result.destination) return
+
+    const items = Array.from(lists)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
+
+    setLists(items)
+
+    // Update positions in database
+    const updates = items.map((item, index) => ({
+      id: item.id,
+      position: index,
+    }))
 
     try {
+      const { error } = await supabase
+        .from('lists')
+        .upsert(updates, { onConflict: 'id' })
+
+      if (error) {
+        console.error('Error updating list positions:', error)
+        fetchLists() // Revert to previous state if error
+      }
+    } catch (error) {
+      console.error('Error in onDragEnd:', error)
+      fetchLists() // Revert to previous state if error
+    }
+  }
+
+  const addList = async (e) => {
+    e.preventDefault()
+    if (!newListName.trim()) {
+      console.log('List name is empty')
+      return
+    }
+
+    try {
+      console.log('Adding new list:', newListName.trim())
+      console.log('User ID:', user?.id)
+
+      if (!user?.id) {
+        console.error('User ID is missing')
+        return
+      }
+
       const { data, error } = await supabase
         .from('lists')
         .insert([
           {
             name: newListName.trim(),
-            user_id: user.id
+            user_id: user.id,
+            position: lists.length,
           }
         ])
         .select()
         .single()
 
       if (error) {
-        console.error('Error adding list:', error)
+        console.error('Error adding list:', error.message)
+        alert('Failed to add list: ' + error.message)
         return
       }
 
+      console.log('List added successfully:', data)
       setNewListName('')
       fetchLists()
       
-      // Sélectionner automatiquement la nouvelle liste
       if (data) {
         onListSelect(data)
       }
     } catch (error) {
       console.error('Error in addList:', error)
+      alert('An unexpected error occurred while adding the list')
     }
   }
 
@@ -133,32 +177,49 @@ export default function Sidebar({ activeList, onListSelect }) {
       ) : lists.length === 0 ? (
         <div className="text-center text-gray-500 py-4">No lists yet. Create your first list!</div>
       ) : (
-        <div className="space-y-1">
-          {lists.map((list) => (
-            <div
-              key={list.id}
-              className={`flex items-center justify-between p-2 rounded-md ${
-                activeList?.id === list.id
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'hover:bg-gray-100'
-              }`}
-            >
-              <button
-                onClick={() => onListSelect(list)}
-                className="flex-1 text-left text-sm font-medium truncate"
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Droppable droppableId="lists">
+            {(provided) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                className="space-y-1"
               >
-                {list.name}
-              </button>
-              <button
-                onClick={() => deleteList(list.id)}
-                className="ml-2 p-1 text-gray-400 hover:text-red-600 focus:outline-none"
-                title="Delete list"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
+                {lists.map((list, index) => (
+                  <Draggable key={list.id} draggableId={list.id} index={index}>
+                    {(provided) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                        className={`flex items-center justify-between p-2 rounded-md ${
+                          activeList?.id === list.id
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'hover:bg-gray-100'
+                        }`}
+                      >
+                        <button
+                          onClick={() => onListSelect(list)}
+                          className="flex-1 text-left text-sm font-medium truncate"
+                        >
+                          {list.name}
+                        </button>
+                        <button
+                          onClick={() => deleteList(list.id)}
+                          className="ml-2 p-1 text-gray-400 hover:text-red-600 focus:outline-none"
+                          title="Delete list"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       )}
     </div>
   )
