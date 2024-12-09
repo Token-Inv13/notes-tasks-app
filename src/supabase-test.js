@@ -1,4 +1,4 @@
-import { supabase } from './lib/supabaseClient'
+import { supabase } from './config/supabaseClient'
 
 // Fonction de test pour vérifier la connexion Supabase
 export const testSupabaseConnection = async () => {
