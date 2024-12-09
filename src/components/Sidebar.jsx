@@ -10,6 +10,9 @@ export default function Sidebar({ activeList, onListSelect }) {
   const { user } = useAuth()
 
   useEffect(() => {
+    console.log('Sidebar mounted');
+    console.log('User:', user);
+    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
     if (user) {
       fetchLists()
     }
@@ -76,10 +79,12 @@ export default function Sidebar({ activeList, onListSelect }) {
       }
       
       console.log('All positions updated successfully');
+      
+      // Recharger les listes pour vérifier que tout est correct
+      await fetchLists();
     } catch (error) {
       console.error('Error in onDragEnd:', error);
       console.log('Reverting to original order...');
-      // En cas d'erreur, recharger les listes
       await fetchLists();
     }
   };
