@@ -62,25 +62,31 @@ export default function Sidebar({ activeList, onListSelect }) {
 
     try {
       console.log('Starting database updates');
-      // Mettre à jour les positions une par une
-      for (let i = 0; i < items.length; i++) {
-        console.log(`Updating item ${items[i].id} to position ${i}`);
-        
-        const { error } = await supabase
-          .from('lists')
-          .update({ position: i })
-          .eq('id', items[i].id)
-          .eq('user_id', user.id);
+      
+      // Préparer les données pour la mise à jour
+      const updates = items.map((item, index) => ({
+        ...item,  // Garder toutes les propriétés existantes
+        position: index,  // Mettre à jour la position
+      }));
 
-        if (error) {
-          console.error(`Error updating list ${items[i].id}:`, error);
-          throw error;
-        }
+      console.log('Preparing updates:', updates);
+
+      // Mise à jour en une seule opération
+      const { data, error } = await supabase
+        .from('lists')
+        .upsert(updates, {
+          returning: 'minimal',
+          onConflict: 'id'
+        });
+
+      if (error) {
+        console.error('Error updating positions:', error);
+        throw error;
       }
+
+      console.log('Positions updated successfully');
       
-      console.log('All positions updated successfully');
-      
-      // Recharger les listes pour vérifier que tout est correct
+      // Recharger les listes pour vérifier
       await fetchLists();
     } catch (error) {
       console.error('Error in onDragEnd:', error);

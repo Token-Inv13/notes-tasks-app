@@ -47,33 +47,49 @@ export default function Notes({ listId }) {
   const onDragEnd = async (result) => {
     if (!result.destination) return;
 
+    console.log('Starting drag end operation');
+    console.log('From position:', result.source.index);
+    console.log('To position:', result.destination.index);
+
     const items = Array.from(notes);
     const [reorderedItem] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, reorderedItem);
 
     // Mettre à jour l'état immédiatement
     setNotes(items);
+    console.log('Local state updated with new order');
 
     try {
-      // Mettre à jour les positions une par une
-      for (let i = 0; i < items.length; i++) {
-        const { error } = await supabase
-          .from('notes')
-          .update({ position: i })
-          .eq('id', items[i].id)
-          .eq('user_id', user.id)
-          .eq('list_id', listId);
-
-        if (error) {
-          console.error('Error updating note position:', error);
-          throw error;
-        }
-      }
+      console.log('Starting database updates');
       
-      console.log('Note positions updated successfully');
+      // Préparer les données pour la mise à jour
+      const updates = items.map((item, index) => ({
+        ...item,  // Garder toutes les propriétés existantes
+        position: index,  // Mettre à jour la position
+      }));
+
+      console.log('Preparing updates:', updates);
+
+      // Mise à jour en une seule opération
+      const { data, error } = await supabase
+        .from('notes')
+        .upsert(updates, {
+          returning: 'minimal',
+          onConflict: 'id'
+        });
+
+      if (error) {
+        console.error('Error updating positions:', error);
+        throw error;
+      }
+
+      console.log('Positions updated successfully');
+      
+      // Recharger les notes pour vérifier
+      await fetchNotes();
     } catch (error) {
       console.error('Error in onDragEnd:', error);
-      // En cas d'erreur, recharger les notes
+      console.log('Reverting to original order...');
       await fetchNotes();
     }
   };
