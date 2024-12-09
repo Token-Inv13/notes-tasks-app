@@ -34,9 +34,11 @@ export default function Tasks({ listId }) {
         return;
       }
 
-      setTasks(data || []);
+      if (data) {
+        setTasks(data);
+      }
     } catch (error) {
-      console.error('Error in fetchTasks:', error);
+      console.error('Error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -49,26 +51,30 @@ export default function Tasks({ listId }) {
     const [reorderedItem] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, reorderedItem);
 
+    // Mettre à jour l'état immédiatement
     setTasks(items);
 
-    // Update positions in database
-    const updates = items.map((item, index) => ({
-      id: item.id,
-      position: index,
-    }));
-
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .upsert(updates, { onConflict: 'id' });
+      // Mettre à jour les positions une par une
+      for (let i = 0; i < items.length; i++) {
+        const { error } = await supabase
+          .from('tasks')
+          .update({ position: i })
+          .eq('id', items[i].id)
+          .eq('user_id', user.id)
+          .eq('list_id', listId);
 
-      if (error) {
-        console.error('Error updating task positions:', error);
-        fetchTasks(); // Revert to previous state if error
+        if (error) {
+          console.error('Error updating task position:', error);
+          throw error;
+        }
       }
+      
+      console.log('Task positions updated successfully');
     } catch (error) {
       console.error('Error in onDragEnd:', error);
-      fetchTasks(); // Revert to previous state if error
+      // En cas d'erreur, recharger les tâches
+      await fetchTasks();
     }
   };
 

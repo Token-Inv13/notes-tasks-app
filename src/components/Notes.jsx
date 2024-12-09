@@ -21,56 +21,62 @@ export default function Notes({ listId }) {
 
   const fetchNotes = async () => {
     try {
-      setIsLoading(true)
+      setIsLoading(true);
       const { data, error } = await supabase
         .from('notes')
         .select('*')
         .eq('list_id', listId)
         .eq('user_id', user.id)
-        .order('position', { ascending: true })
+        .order('position', { ascending: true });
 
       if (error) {
-        console.error('Error fetching notes:', error)
-        return
+        console.error('Error fetching notes:', error);
+        return;
       }
 
-      setNotes(data || [])
+      if (data) {
+        setNotes(data);
+      }
     } catch (error) {
-      console.error('Error in fetchNotes:', error)
+      console.error('Error:', error);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   const onDragEnd = async (result) => {
-    if (!result.destination) return
+    if (!result.destination) return;
 
-    const items = Array.from(notes)
-    const [reorderedItem] = items.splice(result.source.index, 1)
-    items.splice(result.destination.index, 0, reorderedItem)
+    const items = Array.from(notes);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
 
-    setNotes(items)
-
-    // Update positions in database
-    const updates = items.map((item, index) => ({
-      id: item.id,
-      position: index,
-    }))
+    // Mettre à jour l'état immédiatement
+    setNotes(items);
 
     try {
-      const { error } = await supabase
-        .from('notes')
-        .upsert(updates, { onConflict: 'id' })
+      // Mettre à jour les positions une par une
+      for (let i = 0; i < items.length; i++) {
+        const { error } = await supabase
+          .from('notes')
+          .update({ position: i })
+          .eq('id', items[i].id)
+          .eq('user_id', user.id)
+          .eq('list_id', listId);
 
-      if (error) {
-        console.error('Error updating note positions:', error)
-        fetchNotes() // Revert to previous state if error
+        if (error) {
+          console.error('Error updating note position:', error);
+          throw error;
+        }
       }
+      
+      console.log('Note positions updated successfully');
     } catch (error) {
-      console.error('Error in onDragEnd:', error)
-      fetchNotes() // Revert to previous state if error
+      console.error('Error in onDragEnd:', error);
+      // En cas d'erreur, recharger les notes
+      await fetchNotes();
     }
-  }
+  };
 
   const addNote = async (e) => {
     e.preventDefault()

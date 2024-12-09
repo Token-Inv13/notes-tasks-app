@@ -17,59 +17,72 @@ export default function Sidebar({ activeList, onListSelect }) {
 
   const fetchLists = async () => {
     try {
-      setIsLoading(true)
+      setIsLoading(true);
+      console.log('Fetching lists for user:', user.id);
+      
       const { data, error } = await supabase
         .from('lists')
         .select('*')
         .eq('user_id', user.id)
-        .order('position', { ascending: true })
+        .order('position', { ascending: true });
 
       if (error) {
-        console.error('Error fetching lists:', error)
-        return
+        console.error('Error fetching lists:', error);
+        return;
       }
 
-      setLists(data || [])
-      
-      if (!activeList && data && data.length > 0) {
-        onListSelect(data[0])
+      console.log('Fetched lists:', data);
+      if (data) {
+        setLists(data);
       }
     } catch (error) {
-      console.error('Error in fetchLists:', error)
+      console.error('Error:', error);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   const onDragEnd = async (result) => {
-    if (!result.destination) return
+    if (!result.destination) return;
 
-    const items = Array.from(lists)
-    const [reorderedItem] = items.splice(result.source.index, 1)
-    items.splice(result.destination.index, 0, reorderedItem)
+    console.log('Starting drag end operation');
+    console.log('From position:', result.source.index);
+    console.log('To position:', result.destination.index);
 
-    setLists(items)
+    const items = Array.from(lists);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
 
-    // Update positions in database
-    const updates = items.map((item, index) => ({
-      id: item.id,
-      position: index,
-    }))
+    // Mettre à jour l'état immédiatement
+    setLists(items);
+    console.log('Local state updated with new order');
 
     try {
-      const { error } = await supabase
-        .from('lists')
-        .upsert(updates, { onConflict: 'id' })
+      console.log('Starting database updates');
+      // Mettre à jour les positions une par une
+      for (let i = 0; i < items.length; i++) {
+        console.log(`Updating item ${items[i].id} to position ${i}`);
+        
+        const { error } = await supabase
+          .from('lists')
+          .update({ position: i })
+          .eq('id', items[i].id)
+          .eq('user_id', user.id);
 
-      if (error) {
-        console.error('Error updating list positions:', error)
-        fetchLists() // Revert to previous state if error
+        if (error) {
+          console.error(`Error updating list ${items[i].id}:`, error);
+          throw error;
+        }
       }
+      
+      console.log('All positions updated successfully');
     } catch (error) {
-      console.error('Error in onDragEnd:', error)
-      fetchLists() // Revert to previous state if error
+      console.error('Error in onDragEnd:', error);
+      console.log('Reverting to original order...');
+      // En cas d'erreur, recharger les listes
+      await fetchLists();
     }
-  }
+  };
 
   const addList = async (e) => {
     e.preventDefault()
