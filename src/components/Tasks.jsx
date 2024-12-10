@@ -36,6 +36,10 @@ export default function Tasks({ listId }) {
     await updateTaskOrder(items)
   }
 
+  if (!listId) {
+    return <div className="p-4">Select a list to see tasks</div>
+  }
+
   if (isLoading) {
     return <div className="p-4">Loading tasks...</div>
   }
@@ -135,12 +139,14 @@ export default function Tasks({ listId }) {
         </div>
       )}
 
-      <button
-        onClick={() => setShowAddModal(true)}
-        className="fixed bottom-8 right-8 w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 flex items-center justify-center"
-      >
-        <PlusIcon className="h-8 w-8" />
-      </button>
+      {listId && (
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="fixed bottom-8 right-8 w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 flex items-center justify-center"
+        >
+          <PlusIcon className="h-8 w-8" />
+        </button>
+      )}
     </div>
   )
 }

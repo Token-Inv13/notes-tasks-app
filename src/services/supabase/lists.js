@@ -24,7 +24,7 @@ export const listsService = {
 
       const { data, error } = await supabase
         .from('lists')
-        .insert([{ title, user_id: userId, position }])
+        .insert([{ name: title, user_id: userId, position }])
         .select()
         .single();
 
