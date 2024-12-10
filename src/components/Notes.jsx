@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { useNotes } from '../hooks/useNotes'
 
 export default function Notes({ listId }) {
+  const [showAddModal, setShowAddModal] = useState(false)
   const [newNoteContent, setNewNoteContent] = useState('')
   const {
     notes,
@@ -21,6 +22,7 @@ export default function Notes({ listId }) {
     const { error } = await addNote(newNoteContent.trim())
     if (!error) {
       setNewNoteContent('')
+      setShowAddModal(false)
     }
   }
 
@@ -39,23 +41,7 @@ export default function Notes({ listId }) {
   }
 
   return (
-    <div className="p-4">
-      <form onSubmit={handleSubmit} className="mb-4">
-        <textarea
-          placeholder="New note..."
-          value={newNoteContent}
-          onChange={(e) => setNewNoteContent(e.target.value)}
-          className="w-full p-2 border rounded-lg resize-none"
-          rows={4}
-        />
-        <button
-          type="submit"
-          className="mt-2 w-full bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-        >
-          Add Note
-        </button>
-      </form>
-
+    <div className="p-4 relative min-h-screen">
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="notes">
           {(provided) => (
@@ -105,6 +91,49 @@ export default function Notes({ listId }) {
           )}
         </Droppable>
       </DragDropContext>
+
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-4 rounded-lg shadow-lg w-96 max-w-[90%]">
+            <h3 className="text-lg font-medium mb-4">Add New Note</h3>
+            <form onSubmit={handleSubmit}>
+              <textarea
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                placeholder="Note content..."
+                className="w-full p-2 border rounded-lg mb-4 h-32 resize-none"
+                autoFocus
+                required
+              />
+              <div className="flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false)
+                    setNewNoteContent('')
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  Add Note
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowAddModal(true)}
+        className="fixed bottom-8 right-8 w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 flex items-center justify-center"
+      >
+        <PlusIcon className="h-8 w-8" />
+      </button>
     </div>
   )
 }

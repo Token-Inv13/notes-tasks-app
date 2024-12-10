@@ -77,7 +77,7 @@ export default function Sidebar({ activeList, onListSelect }) {
                       }`}
                       onClick={() => onListSelect(list)}
                     >
-                      <span className="truncate">{list.title}</span>
+                      <span className="truncate">{list.name}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
