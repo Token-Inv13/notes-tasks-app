@@ -1,4 +1,4 @@
-import { supabase } from '../../config/supabase';
+import { supabase } from '../../../config/supabase';
 
 export const tasksService = {
   async fetchTasks(listId, userId) {
