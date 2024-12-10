@@ -1,250 +1,101 @@
-import React, { useState, useEffect } from 'react'
-import { supabase } from '../config/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import React, { useState } from 'react'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+import { XMarkIcon } from '@heroicons/react/24/outline'
+import { useAuth } from '../contexts/AuthContext'
+import { useLists } from '../hooks/useLists'
 
 export default function Sidebar({ activeList, onListSelect }) {
-  const [lists, setLists] = useState([])
-  const [newListName, setNewListName] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
+  const [newListTitle, setNewListTitle] = useState('')
   const { user } = useAuth()
+  const { lists, isLoading, addList, updateListOrder, deleteList } = useLists()
 
-  useEffect(() => {
-    console.log('Sidebar mounted');
-    console.log('User:', user);
-    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-    if (user) {
-      fetchLists()
-    }
-  }, [user])
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!newListTitle.trim()) return
 
-  const fetchLists = async () => {
-    try {
-      setIsLoading(true);
-      console.log('Fetching lists for user:', user.id);
-      
-      const { data, error } = await supabase
-        .from('lists')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('position', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching lists:', error);
-        return;
-      }
-
-      console.log('Fetched lists:', data);
-      if (data) {
-        setLists(data);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setIsLoading(false);
+    const { error } = await addList(newListTitle.trim())
+    if (!error) {
+      setNewListTitle('')
     }
   }
 
   const onDragEnd = async (result) => {
-    if (!result.destination) return;
+    if (!result.destination) return
 
-    console.log('Starting drag end operation');
-    console.log('From position:', result.source.index);
-    console.log('To position:', result.destination.index);
+    const items = Array.from(lists)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
 
-    const items = Array.from(lists);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-
-    // Mettre à jour l'état immédiatement
-    setLists(items);
-    console.log('Local state updated with new order');
-
-    try {
-      console.log('Starting database updates');
-      
-      // Préparer les données pour la mise à jour
-      const updates = items.map((item, index) => ({
-        ...item,  // Garder toutes les propriétés existantes
-        position: index,  // Mettre à jour la position
-      }));
-
-      console.log('Preparing updates:', updates);
-
-      // Mise à jour en une seule opération
-      const { data, error } = await supabase
-        .from('lists')
-        .upsert(updates, {
-          returning: 'minimal',
-          onConflict: 'id'
-        });
-
-      if (error) {
-        console.error('Error updating positions:', error);
-        throw error;
-      }
-
-      console.log('Positions updated successfully');
-      
-      // Recharger les listes pour vérifier
-      await fetchLists();
-    } catch (error) {
-      console.error('Error in onDragEnd:', error);
-      console.log('Reverting to original order...');
-      await fetchLists();
-    }
-  };
-
-  const addList = async (e) => {
-    e.preventDefault()
-    if (!newListName.trim()) {
-      console.log('List name is empty')
-      return
-    }
-
-    try {
-      console.log('Adding new list:', newListName.trim())
-      console.log('User ID:', user?.id)
-
-      if (!user?.id) {
-        console.error('User ID is missing')
-        return
-      }
-
-      const { data, error } = await supabase
-        .from('lists')
-        .insert([
-          {
-            name: newListName.trim(),
-            user_id: user.id,
-            position: lists.length,
-          }
-        ])
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Error adding list:', error.message)
-        alert('Failed to add list: ' + error.message)
-        return
-      }
-
-      console.log('List added successfully:', data)
-      setNewListName('')
-      fetchLists()
-      
-      if (data) {
-        onListSelect(data)
-      }
-    } catch (error) {
-      console.error('Error in addList:', error)
-      alert('An unexpected error occurred while adding the list')
-    }
+    await updateListOrder(items)
   }
 
-  const deleteList = async (listId) => {
-    if (!confirm('Are you sure you want to delete this list? All associated notes and tasks will be deleted.')) {
-      return
-    }
-
-    try {
-      const { error } = await supabase
-        .from('lists')
-        .delete()
-        .eq('id', listId)
-        .eq('user_id', user.id)
-
-      if (error) {
-        console.error('Error deleting list:', error)
-        return
-      }
-
-      // Si la liste supprimée était active, sélectionner la première liste restante
-      if (activeList?.id === listId) {
-        const remainingLists = lists.filter(l => l.id !== listId)
-        if (remainingLists.length > 0) {
-          onListSelect(remainingLists[0])
-        } else {
-          onListSelect(null)
-        }
-      }
-
-      fetchLists()
-    } catch (error) {
-      console.error('Error in deleteList:', error)
-    }
+  if (isLoading) {
+    return <div className="p-4">Loading...</div>
   }
 
   return (
     <div className="w-64 bg-gray-50 p-4 border-r border-gray-200 h-full">
-      <form onSubmit={addList} className="mb-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newListName}
-            onChange={(e) => setNewListName(e.target.value)}
-            placeholder="New list name..."
-            className="flex-1 p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            required
-          />
-          <button
-            type="submit"
-            className="bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            Add
-          </button>
-        </div>
+      <form onSubmit={handleSubmit} className="mb-4">
+        <input
+          type="text"
+          placeholder="New list name..."
+          value={newListTitle}
+          onChange={(e) => setNewListTitle(e.target.value)}
+          className="w-full p-2 border rounded-lg mr-2"
+        />
+        <button
+          type="submit"
+          className="mt-2 w-full bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+        >
+          Add
+        </button>
       </form>
 
-      {isLoading ? (
-        <div className="text-center text-gray-500 py-4">Loading lists...</div>
-      ) : lists.length === 0 ? (
-        <div className="text-center text-gray-500 py-4">No lists yet. Create your first list!</div>
-      ) : (
-        <DragDropContext onDragEnd={onDragEnd}>
-          <Droppable droppableId="lists">
-            {(provided) => (
-              <div
-                {...provided.droppableProps}
-                ref={provided.innerRef}
-                className="space-y-1"
-              >
-                {lists.map((list, index) => (
-                  <Draggable key={list.id} draggableId={list.id} index={index}>
-                    {(provided) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        className={`flex items-center justify-between p-2 rounded-md ${
-                          activeList?.id === list.id
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'hover:bg-gray-100'
-                        }`}
+      <DragDropContext onDragEnd={onDragEnd}>
+        <Droppable droppableId="lists">
+          {(provided) => (
+            <div
+              {...provided.droppableProps}
+              ref={provided.innerRef}
+              className="space-y-2"
+            >
+              {lists.map((list, index) => (
+                <Draggable
+                  key={list.id}
+                  draggableId={list.id.toString()}
+                  index={index}
+                >
+                  {(provided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
+                      className={`flex justify-between items-center p-2 rounded-lg cursor-pointer ${
+                        activeList?.id === list.id
+                          ? 'bg-blue-100'
+                          : 'bg-white hover:bg-gray-100'
+                      }`}
+                      onClick={() => onListSelect(list)}
+                    >
+                      <span className="truncate">{list.title}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteList(list.id)
+                        }}
+                        className="text-gray-500 hover:text-red-500"
                       >
-                        <button
-                          onClick={() => onListSelect(list)}
-                          className="flex-1 text-left text-sm font-medium truncate"
-                        >
-                          {list.name}
-                        </button>
-                        <button
-                          onClick={() => deleteList(list.id)}
-                          className="ml-2 p-1 text-gray-400 hover:text-red-600 focus:outline-none"
-                          title="Delete list"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-        </DragDropContext>
-      )}
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                  )}
+                </Draggable>
+              ))}
+              {provided.placeholder}
+            </div>
+          )}
+        </Droppable>
+      </DragDropContext>
     </div>
   )
 }
